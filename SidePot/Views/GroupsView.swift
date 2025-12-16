@@ -5,27 +5,34 @@ struct GroupsView: View {
     @State private var showCreate = false
 
     var body: some View {
-        List {
-            ForEach(store.groups) { g in
-                NavigationLink {
-                    GroupFeedView(group: g)
-                } label: {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(g.name)
-                            .font(.headline)
+        VStack(spacing: 12) {
+            if store.isLockedOut() {
+                Banner(
+                    title: "Participation restricted",
+                    detail: "You have unresolved debts. Resolve them to place pledges or create bets."
+                )
+                .padding(.horizontal)
+            }
 
-                        Text(g.createdAt, style: .date)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            List {
+                ForEach(store.groups) { g in
+                    NavigationLink {
+                        GroupFeedView(groupId: g.id)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(g.name).font(.headline)
+                            Text("\(g.memberIds.count) members")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 6)
                     }
                 }
             }
         }
-        .navigationTitle("SidePot 🪙")
+        .navigationTitle("Groups")
         .toolbar {
-            Button {
-                showCreate = true
-            } label: {
+            Button(action: { showCreate = true }) {
                 Image(systemName: "plus.circle.fill")
             }
         }
@@ -33,8 +40,6 @@ struct GroupsView: View {
             CreateGroupSheet(isPresented: $showCreate)
                 .environmentObject(store)
         }
-        .onAppear {
-            store.refreshGroups()
-        }
+        .onAppear { store.refreshAll() }
     }
 }

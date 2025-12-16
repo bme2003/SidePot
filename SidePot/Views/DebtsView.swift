@@ -1,3 +1,11 @@
+//
+//  DebtsView.swift
+//  SidePot
+//
+//  Created by Brody England on 12/16/25.
+//
+
+
 import SwiftUI
 
 struct DebtsView: View {

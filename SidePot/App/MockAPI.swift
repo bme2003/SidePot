@@ -3,15 +3,21 @@ import Foundation
 @MainActor
 final class MockAPI: ObservableObject {
     static let shared = MockAPI()
-
-    private let saveFile = "sidepot_mock_db.json"
+    private let saveFile = "sidepot_mock_db_v2.json"
 
     struct DB: Codable {
         var me: UserProfile
+        var users: [UserProfile]
+        var friends: [Friend]
+
         var groups: [Group]
+        var invites: [PendingInvite]
+
         var bets: [Bet]
         var wagers: [Wager]
         var comments: [Comment]
+
+        var debts: [Debt]
         var ledger: [LedgerEntry]
     }
 
@@ -21,119 +27,204 @@ final class MockAPI: ObservableObject {
         if let loaded: DB = Persistence.load(DB.self, from: saveFile) {
             self.db = loaded
         } else {
-            let me = UserProfile(id: UUID(), displayName: "Brody")
+            let me = UserProfile(id: UUID(), username: "brody", displayName: "Brody")
             self.db = DB(
                 me: me,
+                users: [me],
+                friends: [],
                 groups: [],
+                invites: [],
                 bets: [],
                 wagers: [],
                 comments: [],
+                debts: [],
                 ledger: []
             )
-            seedIfEmpty()
+            seed()
             persist()
         }
     }
 
-    private func persist() {
-        Persistence.save(db, to: saveFile)
-    }
+    private func persist() { Persistence.save(db, to: saveFile) }
 
-    private func seedIfEmpty() {
-        guard db.groups.isEmpty else { return }
-
-        let g1 = Group(id: UUID(), name: "The Last Men Standing (Friends)", createdAt: Date())
-        db.groups.append(g1)
-
-        let bet = Bet(
+    private func seed() {
+        let g = Group(
             id: UUID(),
-            groupId: g1.id,
-            title: "Does Xavier get a girlfriend by March 31?",
-            details: "Friendly wager. Keep it civil. 🍀",
-            clarification: "Counts if it’s official + acknowledged by both.",
-            lockAt: Calendar.current.date(byAdding: .day, value: 3, to: Date())!,
-            resolveAt: Calendar.current.date(byAdding: .day, value: 14, to: Date())!,
-            rule: .groupVote,
-            status: .active,
-            outcomes: [
-                BetOutcome(id: UUID(), title: "Yes", pot: .zero),
-                BetOutcome(id: UUID(), title: "No", pot: .zero)
-            ],
-            createdByUserId: db.me.id
+            name: "Friends",
+            createdAt: Date(),
+            ownerId: db.me.id,
+            memberIds: [db.me.id]
         )
-        db.bets.append(bet)
+        db.groups.append(g)
 
         db.ledger.append(
             LedgerEntry(
                 id: UUID(),
                 userId: db.me.id,
                 createdAt: Date(),
-                title: "Welcome to SidePot",
-                detail: "This is mock mode (no real money).",
+                title: "Mock mode",
+                detail: "All money is virtual and trust-based.",
                 delta: Money(cents: 0)
             )
         )
     }
 
-    // MARK: - Read
+    // MARK: - Helpers
 
     func getMe() -> UserProfile { db.me }
+
+    func user(for id: UUID) -> UserProfile? {
+        db.users.first { $0.id == id }
+    }
+
+    func displayName(_ userId: UUID) -> String {
+        user(for: userId)?.displayName ?? "Unknown"
+    }
+
+    func usernameExists(_ username: String) -> Bool {
+        db.users.contains { $0.username.lowercased() == username.lowercased() }
+    }
+
+    func ensureUser(username: String, displayName: String) -> UserProfile {
+        if let existing = db.users.first(where: { $0.username.lowercased() == username.lowercased() }) {
+            return existing
+        }
+        let u = UserProfile(id: UUID(),
+                            username: username.trimmingCharacters(in: .whitespacesAndNewlines),
+                            displayName: displayName.trimmingCharacters(in: .whitespacesAndNewlines))
+        db.users.append(u)
+        persist()
+        return u
+    }
+
+    // MARK: - Debt gating
+
+    func openDebts(for userId: UUID) -> [Debt] {
+        db.debts.filter { $0.fromUserId == userId && $0.status == .open }
+    }
+
+    func isLockedOut(userId: UUID) -> Bool {
+        !openDebts(for: userId).isEmpty
+    }
+
+    // MARK: - Groups
 
     func listGroups() -> [Group] {
         db.groups.sorted { $0.createdAt > $1.createdAt }
     }
 
+    func createGroup(name: String) {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let g = Group(id: UUID(),
+                      name: clean.isEmpty ? "Untitled Group" : clean,
+                      createdAt: Date(),
+                      ownerId: db.me.id,
+                      memberIds: [db.me.id])
+        db.groups.insert(g, at: 0)
+        persist()
+    }
+
+    func getGroup(_ groupId: UUID) -> Group? {
+        db.groups.first { $0.id == groupId }
+    }
+
+    func upsertGroup(_ group: Group) {
+        if let idx = db.groups.firstIndex(where: { $0.id == group.id }) {
+            db.groups[idx] = group
+        }
+        persist()
+    }
+
+    func addMember(groupId: UUID, userId: UUID) {
+        guard var g = getGroup(groupId) else { return }
+        guard !g.memberIds.contains(userId) else { return }
+        g.memberIds.append(userId)
+        upsertGroup(g)
+    }
+
+    func removeMember(groupId: UUID, userId: UUID) {
+        guard var g = getGroup(groupId) else { return }
+        guard userId != g.ownerId else { return }
+        g.memberIds.removeAll { $0 == userId }
+        upsertGroup(g)
+    }
+
+    // MARK: - Friends
+
+    func listFriends() -> [Friend] {
+        db.friends.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func addFriend(username: String, displayName: String) {
+        let u = ensureUser(username: username, displayName: displayName)
+        if db.friends.contains(where: { $0.username.lowercased() == u.username.lowercased() }) { return }
+        db.friends.insert(Friend(id: UUID(), username: u.username, displayName: u.displayName, createdAt: Date()), at: 0)
+        persist()
+    }
+
+    func removeFriend(friendId: UUID) {
+        db.friends.removeAll { $0.id == friendId }
+        persist()
+    }
+
+    // MARK: - Invites (Contacts)
+
+    func listInvites(groupId: UUID) -> [PendingInvite] {
+        db.invites.filter { $0.groupId == groupId }.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func createInvite(groupId: UUID, contactName: String, contactIdentifier: String) {
+        let inv = PendingInvite(id: UUID(),
+                                groupId: groupId,
+                                contactName: contactName,
+                                contactIdentifier: contactIdentifier,
+                                createdAt: Date())
+        db.invites.insert(inv, at: 0)
+        persist()
+    }
+
+    func deleteInvite(inviteId: UUID) {
+        db.invites.removeAll { $0.id == inviteId }
+        persist()
+    }
+
+    // MARK: - Bets
+
     func listBets(groupId: UUID) -> [Bet] {
-        db.bets
-            .filter { $0.groupId == groupId }
-            .sorted { $0.lockAt < $1.lockAt }
+        db.bets.filter { $0.groupId == groupId }.sorted { $0.lockAt < $1.lockAt }
     }
 
     func getBet(_ betId: UUID) -> Bet? {
         db.bets.first { $0.id == betId }
     }
 
-    func listComments(betId: UUID) -> [Comment] {
-        db.comments
-            .filter { $0.betId == betId }
-            .sorted { $0.createdAt < $1.createdAt }
-    }
-
-    func listLedger(userId: UUID) -> [LedgerEntry] {
-        db.ledger
-            .filter { $0.userId == userId }
-            .sorted { $0.createdAt > $1.createdAt }
-    }
-
-    func listWagers(betId: UUID) -> [Wager] {
-        db.wagers.filter { $0.betId == betId }
-    }
-
-    // MARK: - Mutations
-
-    func createGroup(name: String) {
-        let g = Group(id: UUID(), name: name.trimmingCharacters(in: .whitespacesAndNewlines), createdAt: Date())
-        db.groups.insert(g, at: 0)
+    func upsertBet(_ bet: Bet) {
+        if let idx = db.bets.firstIndex(where: { $0.id == bet.id }) {
+            db.bets[idx] = bet
+        }
         persist()
     }
 
     func createBet(groupId: UUID,
                    title: String,
                    details: String,
-                   clarification: String?,
                    lockAt: Date,
                    resolveAt: Date,
                    rule: Bet.Rule,
                    outcomes: [String]) {
+        // debt gating
+        guard !isLockedOut(userId: db.me.id) else { return }
+
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanOutcomes = outcomes.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
         guard cleanOutcomes.count >= 2 else { return }
 
         let bet = Bet(
             id: UUID(),
             groupId: groupId,
-            title: title,
-            details: details,
-            clarification: clarification?.isEmpty == true ? nil : clarification,
+            title: cleanTitle.isEmpty ? "Untitled Bet" : cleanTitle,
+            details: cleanDetails.isEmpty ? "No description." : cleanDetails,
             lockAt: lockAt,
             resolveAt: resolveAt,
             rule: rule,
@@ -147,29 +238,33 @@ final class MockAPI: ObservableObject {
     }
 
     func placeWager(betId: UUID, outcomeId: UUID, dollars: Int) {
+        guard !isLockedOut(userId: db.me.id) else { return }
         guard var bet = getBet(betId) else { return }
         guard bet.status == .active else { return }
         guard Date() < bet.lockAt else { return }
 
         let cents = max(1, min(50, dollars)) * 100
-        let w = Wager(id: UUID(), betId: betId, userId: db.me.id, outcomeId: outcomeId, amount: Money(cents: cents), createdAt: Date())
+
+        let w = Wager(id: UUID(),
+                      betId: betId,
+                      userId: db.me.id,
+                      outcomeId: outcomeId,
+                      amount: Money(cents: cents),
+                      createdAt: Date())
         db.wagers.append(w)
 
-        // update pot
         if let idx = bet.outcomes.firstIndex(where: { $0.id == outcomeId }) {
             bet.outcomes[idx].pot = Money(cents: bet.outcomes[idx].pot.cents + cents)
         }
         upsertBet(bet)
 
         db.ledger.append(
-            LedgerEntry(
-                id: UUID(),
-                userId: db.me.id,
-                createdAt: Date(),
-                title: "Pledged \(Money(cents: cents).dollarsString)",
-                detail: "Bet: \(bet.title)",
-                delta: Money(cents: -cents)
-            )
+            LedgerEntry(id: UUID(),
+                        userId: db.me.id,
+                        createdAt: Date(),
+                        title: "Pledge placed",
+                        detail: "Bet: \(bet.title)",
+                        delta: Money(cents: -cents))
         )
         persist()
     }
@@ -178,88 +273,158 @@ final class MockAPI: ObservableObject {
         guard var bet = getBet(betId) else { return }
         bet.status = (bet.status == .disputed) ? .active : .disputed
         upsertBet(bet)
-        persist()
+    }
+
+    // MARK: - Comments
+
+    func listComments(betId: UUID) -> [Comment] {
+        db.comments.filter { $0.betId == betId }.sorted { $0.createdAt < $1.createdAt }
     }
 
     func addComment(betId: UUID, body: String) {
         let text = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-
-        let c = Comment(
-            id: UUID(),
-            betId: betId,
-            userId: db.me.id,
-            authorName: db.me.displayName,
-            body: text,
-            createdAt: Date(),
-            reactions: [:]
-        )
+        let c = Comment(id: UUID(),
+                        betId: betId,
+                        userId: db.me.id,
+                        authorName: db.me.displayName,
+                        body: text,
+                        createdAt: Date())
         db.comments.append(c)
         persist()
     }
 
-    func react(commentId: UUID, emoji: String) {
-        guard let idx = db.comments.firstIndex(where: { $0.id == commentId }) else { return }
-        db.comments[idx].reactions[emoji, default: 0] += 1
+    // MARK: - Debts
+
+    func listDebts(groupId: UUID) -> [Debt] {
+        db.debts.filter { $0.groupId == groupId }.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func resolveDebt(debtId: UUID, actingUserId: UUID) {
+        guard let idx = db.debts.firstIndex(where: { $0.id == debtId }) else { return }
+        let d = db.debts[idx]
+        guard let g = getGroup(d.groupId) else { return }
+
+        // Only group owner or creditor can mark resolved in MVP
+        guard actingUserId == g.ownerId || actingUserId == d.toUserId else { return }
+
+        db.debts[idx].status = .resolved
+        db.debts[idx].resolvedAt = Date()
+
+        db.ledger.append(
+            LedgerEntry(id: UUID(),
+                        userId: d.fromUserId,
+                        createdAt: Date(),
+                        title: "Debt resolved",
+                        detail: "Resolved with \(displayName(d.toUserId))",
+                        delta: Money(cents: 0))
+        )
+        db.ledger.append(
+            LedgerEntry(id: UUID(),
+                        userId: d.toUserId,
+                        createdAt: Date(),
+                        title: "Debt resolved",
+                        detail: "Resolved with \(displayName(d.fromUserId))",
+                        delta: Money(cents: 0))
+        )
         persist()
     }
 
-    /// Settles the bet by distributing winnings proportionally among users who chose the winning outcome.
-    /// In mock mode, we just write ledger entries.
+    // MARK: - Settlement
+
     func resolveBet(betId: UUID, winningOutcomeId: UUID) {
         guard var bet = getBet(betId) else { return }
         guard bet.status != .disputed else { return }
         guard bet.status != .settled else { return }
 
-        // lock if past lockAt
-        if Date() >= bet.lockAt { bet.status = .locked }
-
         let wagers = db.wagers.filter { $0.betId == betId }
         let totalPot = wagers.reduce(0) { $0 + $1.amount.cents }
-
         let winners = wagers.filter { $0.outcomeId == winningOutcomeId }
         let totalWinnerStake = winners.reduce(0) { $0 + $1.amount.cents }
 
-        // If no winners, nobody gets paid. (Could roll over or refund in later version.)
-        if totalWinnerStake == 0 {
-            bet.status = .settled
-            upsertBet(bet)
-            db.ledger.append(
-                LedgerEntry(id: UUID(), userId: db.me.id, createdAt: Date(),
-                            title: "Settled (no winners)",
-                            detail: "Bet: \(bet.title)",
-                            delta: Money(cents: 0))
-            )
+        bet.status = .settled
+        upsertBet(bet)
+
+        // No winners: do nothing beyond ledger note
+        guard totalWinnerStake > 0 else {
+            db.ledger.append(LedgerEntry(id: UUID(),
+                                         userId: db.me.id,
+                                         createdAt: Date(),
+                                         title: "Bet settled",
+                                         detail: "No winners recorded.",
+                                         delta: Money(cents: 0)))
             persist()
             return
         }
 
-        // payout each winner: floor(totalPot * (stake / totalWinnerStake))
-        // remainder pennies stay “platform dust” in mock mode
+        // Compute payouts per winner
+        struct Payout { let userId: UUID; let cents: Int }
+        var payouts: [Payout] = []
         for w in winners {
             let payout = (totalPot * w.amount.cents) / totalWinnerStake
-            db.ledger.append(
-                LedgerEntry(
-                    id: UUID(),
-                    userId: w.userId,
-                    createdAt: Date(),
-                    title: "Won \(Money(cents: payout).dollarsString)",
-                    detail: "Bet: \(bet.title)",
-                    delta: Money(cents: payout)
+            payouts.append(Payout(userId: w.userId, cents: payout))
+        }
+
+        // Compute net per user (payout - stake)
+        var stakeByUser: [UUID:Int] = [:]
+        for w in wagers { stakeByUser[w.userId, default: 0] += w.amount.cents }
+
+        var payoutByUser: [UUID:Int] = [:]
+        for p in payouts { payoutByUser[p.userId, default: 0] += p.cents }
+
+        let allUsers = Set(wagers.map { $0.userId })
+        var netByUser: [UUID:Int] = [:]
+        for u in allUsers {
+            let net = (payoutByUser[u, default: 0] - stakeByUser[u, default: 0])
+            netByUser[u] = net
+        }
+
+        // Create virtual debts: losers (negative net) owe winners (positive net)
+        let winnersNet = netByUser.filter { $0.value > 0 }
+        let losersNet = netByUser.filter { $0.value < 0 }
+
+        let totalWinnerNet = winnersNet.values.reduce(0, +)
+        guard totalWinnerNet > 0 else { persist(); return }
+
+        for (loserId, negNet) in losersNet {
+            let owedTotal = -negNet
+            for (winnerId, posNet) in winnersNet {
+                let share = (owedTotal * posNet) / totalWinnerNet
+                if share <= 0 { continue }
+                db.debts.append(
+                    Debt(id: UUID(),
+                         groupId: bet.groupId,
+                         betId: bet.id,
+                         fromUserId: loserId,
+                         toUserId: winnerId,
+                         amount: Money(cents: share),
+                         status: .open,
+                         createdAt: Date(),
+                         resolvedAt: nil)
                 )
+            }
+        }
+
+        // Ledger notes for winners/losers (virtual)
+        for (u, net) in netByUser {
+            let entryTitle = net >= 0 ? "Bet result recorded" : "Bet result recorded"
+            let entryDetail = "Bet: \(bet.title)"
+            db.ledger.append(
+                LedgerEntry(id: UUID(),
+                            userId: u,
+                            createdAt: Date(),
+                            title: entryTitle,
+                            detail: entryDetail,
+                            delta: Money(cents: net))
             )
         }
 
-        bet.status = .settled
-        upsertBet(bet)
         persist()
     }
 
-    // MARK: - Helpers
+    // MARK: - Ledger
 
-    private func upsertBet(_ bet: Bet) {
-        if let idx = db.bets.firstIndex(where: { $0.id == bet.id }) {
-            db.bets[idx] = bet
-        }
+    func listLedger(userId: UUID) -> [LedgerEntry] {
+        db.ledger.filter { $0.userId == userId }.sorted { $0.createdAt > $1.createdAt }
     }
 }

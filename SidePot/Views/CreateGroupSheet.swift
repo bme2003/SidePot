@@ -1,10 +1,3 @@
-//
-//  CreateGroupSheet.swift
-//  SidePot
-//
-//  Created by Brody England on 12/14/25.
-//
-
 import SwiftUI
 
 struct CreateGroupSheet: View {
@@ -15,19 +8,18 @@ struct CreateGroupSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Group Name") {
+                Section("Group name") {
                     TextField("e.g., Roommates", text: $name)
                 }
             }
-            .navigationTitle("New Group")
+            .navigationTitle("New group")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { isPresented = false }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") {
-                        let finalName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        store.createGroup(name: finalName.isEmpty ? "Untitled Group" : finalName)
+                        store.createGroup(name: name)
                         isPresented = false
                     }
                 }

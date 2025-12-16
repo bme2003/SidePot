@@ -1,54 +1,40 @@
 import Foundation
-import SwiftUI
 
 @MainActor
 final class AppStore: ObservableObject {
-    @Published var me: UserProfile = UserProfile(id: UUID(), displayName: "Me")
+    @Published var me: UserProfile = UserProfile(id: UUID(), username: "me", displayName: "Me")
     @Published var groups: [Group] = []
-    @Published var selectedGroup: Group?
-    @Published var bets: [Bet] = []
+    @Published var friends: [Friend] = []
 
     private let api = MockAPI.shared
 
     func bootstrap() async {
         me = api.getMe()
-        refreshGroups()
-        if let first = groups.first {
-            selectedGroup = first
-            refreshBets(groupId: first.id)
-        }
+        refreshAll()
     }
 
-    func refreshGroups() {
+    func refreshAll() {
         groups = api.listGroups()
+        friends = api.listFriends()
     }
 
-    func refreshBets(groupId: UUID) {
-        bets = api.listBets(groupId: groupId)
-    }
-
-    // Actions
     func createGroup(name: String) {
         api.createGroup(name: name)
-        refreshGroups()
+        refreshAll()
     }
 
-    func createBet(groupId: UUID,
-                   title: String,
-                   details: String,
-                   clarification: String?,
-                   lockAt: Date,
-                   resolveAt: Date,
-                   rule: Bet.Rule,
-                   outcomes: [String]) {
-        api.createBet(groupId: groupId,
-                      title: title,
-                      details: details,
-                      clarification: clarification,
-                      lockAt: lockAt,
-                      resolveAt: resolveAt,
-                      rule: rule,
-                      outcomes: outcomes)
-        refreshBets(groupId: groupId)
+    func addFriend(username: String, displayName: String) {
+        api.addFriend(username: username, displayName: displayName)
+        refreshAll()
+    }
+
+    func addMember(groupId: UUID, username: String, displayName: String) {
+        let u = api.ensureUser(username: username, displayName: displayName)
+        api.addMember(groupId: groupId, userId: u.id)
+        refreshAll()
+    }
+
+    func isLockedOut() -> Bool {
+        api.isLockedOut(userId: me.id)
     }
 }

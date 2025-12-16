@@ -5,35 +5,35 @@ struct UserStatsView: View {
     @StateObject private var api = MockAPI.shared
 
     var body: some View {
-        let wagers = api.db.wagers.filter { $0.userId == store.me.id }
-        let ledger = api.listLedger(userId: store.me.id)
-
-        let totalPledged = wagers.reduce(0) { $0 + $1.amount.cents }
-        let totalDelta = ledger.reduce(0) { $0 + $1.delta.cents }
+        let debts = api.openDebts(for: store.me.id)
+        let totalOwed = debts.reduce(0) { $0 + $1.amount.cents }
 
         VStack(alignment: .leading, spacing: 14) {
-            Text(store.me.displayName)
-                .font(.title.weight(.bold))
+            VStack(alignment: .leading, spacing: 6) {
+                Text(store.me.displayName).font(.title.weight(.bold))
+                Text("@\(store.me.username)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
 
-            HStack {
+            HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Total pledged").font(.caption).foregroundStyle(.secondary)
-                    Text(Money(cents: totalPledged).dollarsString).font(.title3.weight(.semibold))
+                    Text("Open debts").font(.caption).foregroundStyle(.secondary)
+                    Text("\(debts.count)").font(.title3.weight(.semibold))
                 }
                 Spacer()
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Net (mock)").font(.caption).foregroundStyle(.secondary)
-                    Text(Money(cents: abs(totalDelta)).dollarsString)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(totalDelta >= 0 ? .green : .red)
+                    Text("Total owed").font(.caption).foregroundStyle(.secondary)
+                    Text(Money(cents: totalOwed).dollarsString).font(.title3.weight(.semibold))
                 }
             }
             .card()
 
-            Text("Tip: Create a new group/bet to stress-test the flows.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .card()
+            if store.isLockedOut() {
+                Banner(title: "Restricted", detail: "Resolve open debts to create bets or place pledges.")
+            } else {
+                Banner(title: "Clear", detail: "No restrictions. You can participate normally.")
+            }
 
             Spacer()
         }

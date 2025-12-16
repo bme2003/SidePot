@@ -8,6 +8,13 @@ struct LedgerView: View {
         let entries = api.listLedger(userId: store.me.id)
 
         List {
+            if store.isLockedOut() {
+                Section {
+                    Text("You have unresolved debts. Resolve them to regain full access.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             ForEach(entries) { e in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {

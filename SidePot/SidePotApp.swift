@@ -1,10 +1,3 @@
-//
-//  SidePotApp.swift
-//  SidePot
-//
-//  Created by Brody England on 12/14/25.
-//
-
 import SwiftUI
 
 @main
@@ -15,33 +8,25 @@ struct SidePotApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(store)
-                .task {
-                    await store.bootstrap()
-                }
+                .task { await store.bootstrap() }
         }
     }
 }
 
 struct RootView: View {
-    @EnvironmentObject var store: AppStore
-
     var body: some View {
         TabView {
-            NavigationStack {
-                GroupsView()
-            }
-            .tabItem { Label("Groups", systemImage: "person.3.fill") }
+            NavigationStack { GroupsView() }
+                .tabItem { Label("Groups", systemImage: "person.3.fill") }
 
-            NavigationStack {
-                LedgerView()
-            }
-            .tabItem { Label("Ledger", systemImage: "list.bullet.rectangle") }
+            NavigationStack { FriendsView() }
+                .tabItem { Label("Friends", systemImage: "person.crop.circle.badge.plus") }
 
-            NavigationStack {
-                UserStatsView()
-            }
-            .tabItem { Label("Me", systemImage: "person.crop.circle") }
+            NavigationStack { LedgerView() }
+                .tabItem { Label("Ledger", systemImage: "list.bullet.rectangle") }
+
+            NavigationStack { UserStatsView() }
+                .tabItem { Label("Me", systemImage: "person.circle") }
         }
     }
 }
-
