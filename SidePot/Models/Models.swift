@@ -1,5 +1,22 @@
 import Foundation
 
+// MARK: - Auth
+
+struct AuthRecord: Codable, Hashable {
+    let userId: UUID
+    let usernameLower: String
+    let salt: String
+    let passwordHash: String
+    let createdAt: Date
+}
+
+struct SessionRecord: Codable, Hashable {
+    let token: String
+    let userId: UUID
+    let usernameLower: String
+    let createdAt: Date
+}
+
 // MARK: - Users
 
 struct UserProfile: Codable, Identifiable, Hashable {
