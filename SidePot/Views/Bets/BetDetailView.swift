@@ -12,7 +12,7 @@ struct BetDetailView: View {
     @State private var selectedOutcomeId: UUID?
 
     @State private var showResolve = false
-
+    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -22,7 +22,12 @@ struct BetDetailView: View {
                 }
 
                 if let bet {
-                    BetHeaderCard(bet: bet)
+                    
+                    // Cacluate the pot
+                    let totalPotCents = bet.outcomes.reduce(0) { $0 + $1.pot.cents }
+                    let totalPotDollars = Double(totalPotCents) / 100.0
+                    
+                    BetHeaderCard(bet: bet, pot: totalPotDollars)
 
                     if bet.status == .settled {
                         SettledBanner()
@@ -36,7 +41,6 @@ struct BetDetailView: View {
                         ForEach(bet.outcomes) { o in
                             OutcomeCard(
                                 title: o.title,
-                                pot: o.pot.dollarsString,
                                 selected: selectedOutcomeId == o.id
                             )
                             .contentShape(Rectangle())
@@ -177,16 +181,24 @@ private struct SettledBanner: View {
 
 private struct BetHeaderCard: View {
     let bet: Bet
+    let pot: Double
 
     var body: some View {
+        
         VStack(alignment: .leading, spacing: 8) {
-            Text(bet.title)
-                .font(.title2.weight(.bold))
+            HStack {
+                Text(bet.title)
+                    .font(.title2.weight(.bold))
+                Spacer()
+                StatusPill(text: bet.status.rawValue.capitalized)
+            }
+            
             Text(bet.details)
                 .foregroundStyle(.secondary)
+            
 
             HStack(spacing: 10) {
-                StatusPill(text: bet.status.rawValue.capitalized)
+                Text(String(format: "Pot: $%.2f", pot)).font(.title3.weight(.bold))
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("Locks").font(.caption).foregroundStyle(.secondary)
@@ -214,16 +226,12 @@ private struct StatusPill: View {
 
 private struct OutcomeCard: View {
     let title: String
-    let pot: String
     let selected: Bool
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.headline)
-                Text("Pot: \(pot)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             Spacer()
             Image(systemName: selected ? "checkmark.circle.fill" : "circle")
