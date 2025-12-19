@@ -221,6 +221,10 @@ private struct StatusPill: View {
             .padding(.vertical, 6)
             .background(.ultraThinMaterial)
             .clipShape(Capsule())
+            .overlay(
+                        Capsule()
+                            .stroke(Color.primary, lineWidth: 1.5)
+                    )
     }
 }
 
